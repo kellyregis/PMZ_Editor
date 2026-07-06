@@ -64,6 +64,13 @@ export function loadImageSource({
 		return { source: image, width: naturalWidth, height: naturalHeight };
 	})();
 
+	// Evict a rejected load from the cache so a transient/format failure can be
+	// retried on a later frame instead of poisoning every subsequent render
+	// (the cache stores the promise, so a cached rejection would be permanent).
+	promise.catch(() => {
+		imageSourceCache.delete(cacheKey);
+	});
+
 	imageSourceCache.set(cacheKey, promise);
 	return promise;
 }

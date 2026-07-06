@@ -206,7 +206,17 @@ function PreviewCanvas({
 		lastFrameRef.current = frame;
 		renderer
 			.render({ node: renderTree, time: renderTime })
-			.then(() => {
+			.catch((err) => {
+				console.error("preview render error", err);
+				// Reset dedup so the next tick retries this frame instead of
+				// skipping it as "already rendered" (e.g. a transient image
+				// decode failure should not permanently blank the layer).
+				lastFrameRef.current = -1;
+			})
+			.finally(() => {
+				// Always release the render lock. Without this, a rejected
+				// render (only images can reject) would leave renderingRef
+				// stuck true and freeze the entire preview loop on play.
 				renderingRef.current = false;
 			});
 	}, [renderer, renderTree, editor.playback, editor.timeline]);
