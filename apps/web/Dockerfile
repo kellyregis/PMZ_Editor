@@ -8,6 +8,10 @@ ARG FREESOUND_CLIENT_ID
 ARG FREESOUND_API_KEY
 ARG NEXT_PUBLIC_MARBLE_API_URL=https://api.marblecms.com
 ARG MARBLE_WORKSPACE_KEY=build-placeholder
+# NEXT_PUBLIC_SITE_URL is inlined into the client bundle at build time
+# (used by better-auth's client baseURL), so it MUST be provided as a
+# build arg for self-hosted deploys. Defaults to localhost for upstream/dev.
+ARG NEXT_PUBLIC_SITE_URL=http://localhost:3000
 
 COPY package.json package.json
 COPY bun.lock bun.lock
@@ -26,7 +30,7 @@ ENV DATABASE_URL="postgresql://opencut:opencut@localhost:5432/opencut"
 ENV BETTER_AUTH_SECRET="build-time-secret"
 ENV UPSTASH_REDIS_REST_URL="http://localhost:8079"
 ENV UPSTASH_REDIS_REST_TOKEN="example_token"
-ENV NEXT_PUBLIC_SITE_URL="http://localhost:3000"
+ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
 ENV NEXT_PUBLIC_MARBLE_API_URL=$NEXT_PUBLIC_MARBLE_API_URL
 ENV MARBLE_WORKSPACE_KEY=$MARBLE_WORKSPACE_KEY
 

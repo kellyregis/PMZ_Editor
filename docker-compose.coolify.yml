@@ -1,0 +1,144 @@
+# ---------------------------------------------------------------------------
+# OpenCut (PMZ_Editor) — Coolify self-host compose (Node standalone, no Cloudflare)
+#
+# Coolify manages the network + Traefik routing via its "docker_compose_domains"
+# feature, so there are NO manual labels, NO manual networks and NO published
+# host ports here. Set the service domain (editor.<DOMAIN>) for `oc-web` in the
+# Coolify UI. The variables below (${...}) are injected by Coolify's env panel.
+#
+# Required Coolify env vars:
+#   DOMAIN           base domain, e.g. "pmz.example.com" (oc-web served at editor.<DOMAIN>)
+#   OC_DB_PASSWORD   postgres password for the "opencut" user
+#   OC_SRH_TOKEN     shared token between oc-srh and oc-web (Upstash REST token)
+#   OC_AUTH_SECRET   better-auth secret (openssl rand -hex 32)
+#
+# See DEPLOY_COOLIFY.md for the full env reference and migration mechanism.
+# ---------------------------------------------------------------------------
+
+services:
+  # ---- Postgres (internal only) -------------------------------------------
+  oc-db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: opencut
+      POSTGRES_PASSWORD: ${OC_DB_PASSWORD}
+      POSTGRES_DB: opencut
+    volumes:
+      - oc_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opencut -d opencut"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # ---- Redis (internal only) ----------------------------------------------
+  oc-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - oc_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ---- Serverless Redis HTTP (Upstash REST proxy, internal only) ----------
+  oc-srh:
+    image: hiett/serverless-redis-http:latest
+    restart: unless-stopped
+    environment:
+      SRH_MODE: env
+      SRH_TOKEN: ${OC_SRH_TOKEN}
+      SRH_CONNECTION_STRING: "redis://oc-redis:6379"
+    depends_on:
+      oc-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:80 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # ---- One-shot DB migration (drizzle-kit migrate) ------------------------
+  # The production runner image (next standalone) does NOT bundle drizzle-kit
+  # (it is a devDependency and is not traced into .next/standalone). So we run
+  # migrations from the Dockerfile "builder" stage, which has the full
+  # node_modules (incl. drizzle-kit) and the source + drizzle.config.ts.
+  # `drizzle-kit migrate` applies the committed SQL files in apps/web/migrations
+  # (it does NOT read the schema path nor generate anything). Runs once, exits.
+  oc-migrate:
+    build:
+      context: .
+      dockerfile: ./apps/web/Dockerfile
+      target: builder
+      args:
+        - NEXT_PUBLIC_SITE_URL=https://editor.${DOMAIN}
+        - NEXT_PUBLIC_MARBLE_API_URL=https://api.marblecms.com
+        - MARBLE_WORKSPACE_KEY=build-placeholder
+        - FREESOUND_CLIENT_ID=build-placeholder
+        - FREESOUND_API_KEY=build-placeholder
+    restart: "no"
+    working_dir: /app/apps/web
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://opencut:${OC_DB_PASSWORD}@oc-db:5432/opencut
+    command: ["bun", "run", "db:migrate"]
+    depends_on:
+      oc-db:
+        condition: service_healthy
+
+  # ---- Web (Next 16 standalone runner) ------------------------------------
+  oc-web:
+    build:
+      context: .
+      dockerfile: ./apps/web/Dockerfile
+      # default target = runner (production standalone image)
+      args:
+        # NEXT_PUBLIC_* are inlined into the client bundle at BUILD time,
+        # so they must be passed as build args (not just runtime env).
+        - NEXT_PUBLIC_SITE_URL=https://editor.${DOMAIN}
+        - NEXT_PUBLIC_MARBLE_API_URL=https://api.marblecms.com
+        - MARBLE_WORKSPACE_KEY=build-placeholder
+        - FREESOUND_CLIENT_ID=build-placeholder
+        - FREESOUND_API_KEY=build-placeholder
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      # --- Core (required by src/env/web.ts zod schema at boot) ---
+      DATABASE_URL: postgres://opencut:${OC_DB_PASSWORD}@oc-db:5432/opencut
+      BETTER_AUTH_SECRET: ${OC_AUTH_SECRET}
+      # better-auth in code uses NEXT_PUBLIC_SITE_URL as baseURL/trustedOrigins.
+      # BETTER_AUTH_URL is NOT read by the app code; kept as harmless alias.
+      BETTER_AUTH_URL: https://editor.${DOMAIN}
+      NEXT_PUBLIC_SITE_URL: https://editor.${DOMAIN}
+      UPSTASH_REDIS_REST_URL: http://oc-srh:80
+      UPSTASH_REDIS_REST_TOKEN: ${OC_SRH_TOKEN}
+      # --- Optional features -> placeholders so the zod parse passes and the
+      #     CORE editor boots. Blog (MARBLE) and sound search (FREESOUND)
+      #     features stay inert until real keys are provided. ---
+      NEXT_PUBLIC_MARBLE_API_URL: https://api.marblecms.com
+      MARBLE_WORKSPACE_KEY: build-placeholder
+      FREESOUND_CLIENT_ID: build-placeholder
+      FREESOUND_API_KEY: build-placeholder
+    depends_on:
+      oc-db:
+        condition: service_healthy
+      oc-srh:
+        condition: service_healthy
+      oc-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  oc_postgres_data:
+  oc_redis_data:
