@@ -112,7 +112,8 @@ estiver vazio):
 1. **App gera um JWT** HS256 assinado com `PMZ_SSO_SECRET`. Claims esperadas:
    `{ type:"editor_sso", email, sub, clip_id?, kind?:"clip"|"merge", exp(~5min), jti }`.
    Manda o usuário para `https://editor.<DOMAIN>/api/auth/sso?token=<jwt>`.
-2. **Bridge SSO** (`app/api/auth/sso/route.ts`): valida o JWT (jose), faz upsert do
+2. **Bridge SSO** (`app/api/auth/sso/route.ts`): valida o JWT HS256 (`node:crypto`,
+   sem lib externa), faz upsert do
    user por email e cria a sessão better-auth **via API pública** (`signInEmail`/
    `signUpEmail` com senha derivada de `HMAC(PMZ_SSO_SECRET, email)` — nunca exposta;
    o better-auth assina o cookie de sessão corretamente). Se `clip_id` presente →

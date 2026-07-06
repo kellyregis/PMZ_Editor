@@ -1,11 +1,51 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { jwtVerify } from "jose";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { auth } from "@/auth/server";
 import { webEnv } from "@/env/web";
 
-// Node runtime: needs DB (better-auth) + Web Crypto.
+// Node runtime: needs DB (better-auth) + node:crypto + Web Crypto.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * Verify a symmetric HS256 JWT with node:crypto (no external lib — jose does not
+ * resolve under the frozen bun install). Returns the decoded payload, or null
+ * if the signature is invalid, the token is malformed, or it has expired.
+ */
+function b64urlToBuf(s: string): Buffer {
+	return Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+}
+
+function verifyHs256({
+	token,
+	secret,
+}: {
+	token: string;
+	secret: string;
+}): Record<string, unknown> | null {
+	const parts = token.split(".");
+	if (parts.length !== 3) return null;
+	const [h, p, sig] = parts;
+
+	const expected = createHmac("sha256", secret).update(`${h}.${p}`).digest();
+	const got = b64urlToBuf(sig);
+	if (expected.length !== got.length || !timingSafeEqual(expected, got)) {
+		return null;
+	}
+
+	let payload: Record<string, unknown>;
+	try {
+		payload = JSON.parse(b64urlToBuf(p).toString("utf8"));
+	} catch {
+		return null;
+	}
+
+	// Reject expired tokens (exp is seconds since epoch).
+	if (typeof payload.exp === "number" && Date.now() / 1000 > payload.exp) {
+		return null;
+	}
+	return payload;
+}
 
 /**
  * SSO bridge for pmz-clipper.
@@ -68,27 +108,21 @@ export async function GET(request: NextRequest) {
 	const token = request.nextUrl.searchParams.get("token");
 	if (!token) return appRedirect();
 
-	// 1. Verify the JWT (jose checks exp automatically).
-	let email: string;
+	// 1. Verify the JWT (HS256, node:crypto — also checks exp).
+	const payload = verifyHs256({ token, secret });
+	if (
+		!payload ||
+		payload.type !== "editor_sso" ||
+		typeof payload.email !== "string"
+	) {
+		return appRedirect();
+	}
+	const email: string = payload.email;
 	let clipId: string | null = null;
 	let kind = "clip";
-	try {
-		const { payload } = await jwtVerify(
-			token,
-			new TextEncoder().encode(secret),
-			{ algorithms: ["HS256"] },
-		);
-		if (payload.type !== "editor_sso" || typeof payload.email !== "string") {
-			return appRedirect();
-		}
-		email = payload.email;
-		if (typeof payload.clip_id === "string") clipId = payload.clip_id;
-		if (payload.kind === "merge" || payload.kind === "clip") {
-			kind = payload.kind;
-		}
-	} catch (error) {
-		console.error("SSO token verification failed:", error);
-		return appRedirect();
+	if (typeof payload.clip_id === "string") clipId = payload.clip_id;
+	if (payload.kind === "merge" || payload.kind === "clip") {
+		kind = payload.kind;
 	}
 
 	// 2. Upsert user + create session via better-auth's public API.
