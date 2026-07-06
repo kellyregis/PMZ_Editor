@@ -3,8 +3,10 @@ import type { StickerProvider } from "@/stickers/types";
 import { flagsProvider } from "./flags";
 import { logosProvider } from "./logos";
 import { shapesProvider } from "./shapes";
+import { pmzProvider } from "./pmz";
 
 const defaultProviders: StickerProvider[] = [
+	pmzProvider,
 	logosProvider,
 	flagsProvider,
 	shapesProvider,
