@@ -96,21 +96,17 @@ function buildSortParameter({ query, sort }: { query?: string; sort: string }) {
 function applyEffectsFilters({
 	params,
 	min_rating,
-	commercial_only,
 }: {
 	params: URLSearchParams;
 	min_rating: number;
-	commercial_only: boolean;
 }) {
 	params.append("filter", "duration:[* TO 30.0]");
 	params.append("filter", `avg_rating:[${min_rating} TO *]`);
 
-	if (commercial_only) {
-		params.append(
-			"filter",
-			'license:("Attribution" OR "Creative Commons 0" OR "Attribution Noncommercial" OR "Attribution Commercial")',
-		);
-	}
+	// Commercial SaaS: restrict to CC0 (royalty-free, no attribution required).
+	// Always applied — never surface Attribution / Attribution-Noncommercial
+	// results, which are not safe for commercial reuse.
+	params.append("filter", 'license:"Creative Commons 0"');
 
 	params.append(
 		"filter",
@@ -182,7 +178,6 @@ export async function GET(request: NextRequest) {
 			page_size: pageSize,
 			sort,
 			min_rating,
-			commercial_only,
 		} = validationResult.data;
 
 		if (type === "songs") {
@@ -212,7 +207,7 @@ export async function GET(request: NextRequest) {
 
 		const isEffectsSearch = type === "effects" || !type;
 		if (isEffectsSearch) {
-			applyEffectsFilters({ params, min_rating, commercial_only });
+			applyEffectsFilters({ params, min_rating });
 		}
 
 		const response = await fetch(`${baseUrl}?${params.toString()}`);

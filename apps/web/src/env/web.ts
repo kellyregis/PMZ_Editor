@@ -23,6 +23,26 @@ const webEnvSchema = z.object({
 	MARBLE_WORKSPACE_KEY: z.string(),
 	FREESOUND_CLIENT_ID: z.string(),
 	FREESOUND_API_KEY: z.string(),
+
+	// --- pmz-clipper integration (all optional; SSO stays off until set) ---
+	// HS256 shared secret used to (a) verify the SSO JWT and (b) authorize the
+	// server-to-server clip-data call. If absent, the SSO bridge returns 501.
+	PMZ_SSO_SECRET: z.string().optional(),
+	// When "true", middleware requires a better-auth session on every route
+	// (except the SSO/import entrypoints + statics) and bounces others to the
+	// pmz-clipper app. Default off so we cannot lock ourselves out.
+	PMZ_REQUIRE_SSO: z.string().optional().default("false"),
+	// Base URL of the pmz-clipper backend API (clip-data endpoint lives here).
+	PMZ_CLIPPER_API: z
+		.string()
+		.optional()
+		.default("https://api.pmzclips.pandoramodz.com.br"),
+	// Public URL of the pmz-clipper app (redirect target for unauthenticated
+	// users / invalid tokens).
+	PMZ_APP_URL: z
+		.string()
+		.optional()
+		.default("https://pmzclips.pandoramodz.com.br"),
 });
 
 export type WebEnv = z.infer<typeof webEnvSchema>;

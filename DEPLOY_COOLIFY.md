@@ -31,6 +31,16 @@ domínio `editor.<DOMAIN>` para o serviço `oc-web` (porta interna 3000).
 | `OC_SRH_TOKEN`   | `openssl rand -hex 24`               | Token compartilhado oc-srh ↔ oc-web |
 | `OC_AUTH_SECRET` | `openssl rand -hex 32`               | Segredo do better-auth |
 
+Opcionais (integração pmz-clipper + Freesound). Todas têm default no compose; só setar quando for ligar a feature:
+
+| Var Coolify           | Default                                   | Uso |
+|-----------------------|-------------------------------------------|-----|
+| `OC_PMZ_SSO_SECRET`   | *(vazio → SSO desligado, bridge 501)*     | Segredo HS256 compartilhado com o pmz-clipper (assina o JWT de SSO + autoriza a chamada de clip-data). Gerar `openssl rand -hex 32` e usar o MESMO valor no app. |
+| `OC_PMZ_REQUIRE_SSO`  | `false`                                   | `true` liga o gate (sem sessão → redirect pro app). **Deixar `false` até o lado do app estar pronto.** |
+| `OC_PMZ_CLIPPER_API`  | `https://api.pmzclips.pandoramodz.com.br` | Base URL do backend do clipper (endpoint `/editor/clip-data/{id}`). |
+| `OC_PMZ_APP_URL`      | `https://pmzclips.pandoramodz.com.br`     | URL do app (redirect de não-autenticados / token inválido). |
+| `OC_FREESOUND_API_KEY`| `build-placeholder`                       | Chave real do Freesound → acende o banco de sons (filtrado a CC0). Sem ela, busca de sons fica inerte. |
+
 ### Env do app (validadas pelo zod em `apps/web/src/env/web.ts` no boot)
 
 O módulo `src/env/web.ts` faz `webEnvSchema.parse(process.env)` no import. Se
@@ -93,6 +103,41 @@ builda o stage `builder` do Dockerfile (tem `node_modules` completo + fonte +
 - Não usamos `db:push` (o `schema` path em `drizzle.config.ts` aponta para
   `./src/lib/db/schema.ts`, caminho que não existe neste fork — o schema real
   está em `src/db/schema.ts`; `migrate` não depende desse path, `push` sim).
+
+## Integração pmz-clipper (SSO + import de clipe)
+
+Fluxo end-to-end (nenhuma parte muda o comportamento atual enquanto `PMZ_SSO_SECRET`
+estiver vazio):
+
+1. **App gera um JWT** HS256 assinado com `PMZ_SSO_SECRET`. Claims esperadas:
+   `{ type:"editor_sso", email, sub, clip_id?, kind?:"clip"|"merge", exp(~5min), jti }`.
+   Manda o usuário para `https://editor.<DOMAIN>/api/auth/sso?token=<jwt>`.
+2. **Bridge SSO** (`app/api/auth/sso/route.ts`): valida o JWT (jose), faz upsert do
+   user por email e cria a sessão better-auth **via API pública** (`signInEmail`/
+   `signUpEmail` com senha derivada de `HMAC(PMZ_SSO_SECRET, email)` — nunca exposta;
+   o better-auth assina o cookie de sessão corretamente). Se `clip_id` presente →
+   redirect `/import?clip_id&kind`; senão → `/projects`. Token inválido/expirado ou
+   secret ausente → redirect pro `PMZ_APP_URL` (secret ausente = 501).
+3. **Página de import** (`app/import/page.tsx`, client-side): chama o proxy
+   `app/api/import/clip-data` (server-to-server, Bearer `PMZ_SSO_SECRET`, valida a
+   sessão), baixa `video_url`/`music_url` (presigned MinIO) como `File`, cria o
+   projeto via `EditorCore` (managers/commands: `createNewProject` → `addMediaAsset`
+   → `buildElementFromMedia`+`insertElement` → `insertCaptionChunksAsTextTrack` →
+   `saveCurrentProject`) e redireciona pra `/editor/<projectId>`.
+   **Roda no browser** porque `EditorCore`/`storageService` persistem em IndexedDB +
+   OPFS (sem equivalente server).
+4. **Gate** (`middleware.ts`, flag `PMZ_REQUIRE_SSO`): quando `true`, exige o cookie
+   de sessão better-auth em todas as rotas (exceto `/api/auth`, `/api/import`,
+   `/import`, health e estáticos); sem cookie → redirect pro `PMZ_APP_URL`. Default
+   `false` (no-op).
+
+Requisitos no lado do app / infra (o orquestrador implementa):
+- Endpoint `GET {PMZ_CLIPPER_API}/editor/clip-data/{id}?kind=clip|merge` com
+  `Authorization: Bearer {PMZ_SSO_SECRET}` → `{ title, video_url, duration_s,
+  captions:[{text,start,duration}], music_url? }` (tempos em segundos).
+- **CORS no MinIO**: os presigned URLs de `video_url`/`music_url` precisam permitir
+  `GET` cross-origin a partir de `https://editor.<DOMAIN>` (o browser baixa direto).
+- `PMZ_SSO_SECRET` idêntico nos dois lados.
 
 ## Passos no Coolify
 
