@@ -26,6 +26,8 @@ import { HugeiconsIcon } from "@hugeicons/react";
 import { ShortcutsDialog } from "@/actions/components/shortcuts-dialog";
 import Image from "next/image";
 import { cn } from "@/utils/ui";
+import { LocaleToggle } from "@/i18n/locale-toggle";
+import { useT } from "@/i18n/locale-provider";
 
 export function EditorHeader() {
 	return (
@@ -37,6 +39,7 @@ export function EditorHeader() {
 			<nav className="flex items-center gap-2">
 				<FeedbackPopover />
 				<ExportButton />
+				<LocaleToggle />
 				<ThemeToggle />
 			</nav>
 		</header>
@@ -51,6 +54,7 @@ function ProjectDropdown() {
 	const router = useRouter();
 	const editor = useEditor();
 	const activeProject = useEditor((e) => e.project.getActive());
+	const t = useT();
 
 	const handleExit = async () => {
 		if (isExiting) return;
@@ -127,14 +131,14 @@ function ProjectDropdown() {
 						disabled={isExiting}
 						icon={<HugeiconsIcon icon={Logout05Icon} />}
 					>
-						Exit project
+						{t("header.exit")}
 					</DropdownMenuItem>
 
 					<DropdownMenuItem
 						onClick={() => setOpenDialog("shortcuts")}
 						icon={<HugeiconsIcon icon={CommandIcon} />}
 					>
-						Shortcuts
+						{t("header.shortcuts")}
 					</DropdownMenuItem>
 
 					<DropdownMenuSeparator />

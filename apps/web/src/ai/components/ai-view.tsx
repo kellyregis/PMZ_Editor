@@ -18,6 +18,7 @@ import { useEditor } from "@/editor/use-editor";
 import { TRANSCRIPTION_LANGUAGES } from "@/transcription/supported-languages";
 import { buildSceneSnapshot } from "@/ai/scene-snapshot";
 import { applyAiOperations, type AiOperation } from "@/ai/operations";
+import { useT } from "@/i18n/locale-provider";
 
 interface AiResponse {
 	message?: string;
@@ -26,6 +27,7 @@ interface AiResponse {
 
 export function AIView() {
 	const editor = useEditor();
+	const t = useT();
 	const [prompt, setPrompt] = useState("");
 	const [lang, setLang] = useState("en");
 	const [busy, setBusy] = useState<null | "apply" | "translate">(null);
@@ -47,7 +49,7 @@ export function AIView() {
 		try {
 			const snapshot = buildSceneSnapshot({ editor });
 			if (!snapshot) {
-				setError("Abra um projeto antes de usar a IA.");
+				setError(t("ai.needProject"));
 				return;
 			}
 
@@ -58,15 +60,15 @@ export function AIView() {
 			});
 
 			if (res.status === 401) {
-				setError("Sessão expirada. Recarregue a página.");
+				setError(t("ai.sessionExpired"));
 				return;
 			}
 			if (res.status === 501) {
-				setError("IA não configurada (PMZ_SSO_SECRET ausente).");
+				setError(t("ai.notConfigured"));
 				return;
 			}
 			if (!res.ok) {
-				setError(`Falha na IA (${res.status}).`);
+				setError(t("ai.failed", { status: res.status }));
 				return;
 			}
 
@@ -74,7 +76,7 @@ export function AIView() {
 			const operations = Array.isArray(data.operations) ? data.operations : [];
 			const result = applyAiOperations({ editor, operations });
 			setMessage(
-				data.message ?? `${result.applied} operação(ões) aplicada(s).`,
+				data.message ?? t("ai.applied", { count: result.applied }),
 			);
 			setWarnings(result.warnings);
 		} catch (err) {
@@ -106,14 +108,11 @@ export function AIView() {
 				<SectionContent className="flex flex-col gap-4 h-full pt-1">
 					{/* Natural-language commands */}
 					<div className="flex flex-col gap-2">
-						<p className="text-muted-foreground text-xs">
-							Diga o que quer fazer (ex.: "corta em 10s", "remove a primeira
-							legenda", "deixa 20s").
-						</p>
+						<p className="text-muted-foreground text-xs">{t("ai.hint")}</p>
 						<Textarea
 							value={prompt}
 							onChange={(e) => setPrompt(e.target.value)}
-							placeholder="Digite um comando…"
+							placeholder={t("ai.placeholder")}
 							rows={3}
 							disabled={isBusy}
 						/>
@@ -124,7 +123,7 @@ export function AIView() {
 							disabled={isBusy || prompt.trim().length === 0}
 						>
 							{busy === "apply" && <Spinner className="mr-1" />}
-							Aplicar
+							{t("ai.apply")}
 						</Button>
 					</div>
 
@@ -132,10 +131,12 @@ export function AIView() {
 
 					{/* Subtitle translation */}
 					<div className="flex flex-col gap-2">
-						<p className="text-muted-foreground text-xs">Traduzir legendas</p>
+						<p className="text-muted-foreground text-xs">
+							{t("ai.translateTitle")}
+						</p>
 						<Select value={lang} onValueChange={(value) => setLang(value)}>
 							<SelectTrigger>
-								<SelectValue placeholder="Idioma" />
+								<SelectValue placeholder={t("ai.language")} />
 							</SelectTrigger>
 							<SelectContent>
 								{TRANSCRIPTION_LANGUAGES.map((language) => (
@@ -153,7 +154,7 @@ export function AIView() {
 							disabled={isBusy}
 						>
 							{busy === "translate" && <Spinner className="mr-1" />}
-							Traduzir
+							{t("ai.translate")}
 						</Button>
 					</div>
 

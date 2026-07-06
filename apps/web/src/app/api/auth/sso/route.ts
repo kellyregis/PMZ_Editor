@@ -124,6 +124,8 @@ export async function GET(request: NextRequest) {
 	if (payload.kind === "merge" || payload.kind === "clip") {
 		kind = payload.kind;
 	}
+	// Editor UI language default from the clipper (claim `lang`: "pt" | "en").
+	const lang = payload.lang === "pt" ? "pt" : "en";
 
 	// 2. Upsert user + create session via better-auth's public API.
 	const password = await derivePassword({ secret, email });
@@ -174,5 +176,12 @@ export async function GET(request: NextRequest) {
 	for (const cookie of authResponse.headers.getSetCookie()) {
 		response.headers.append("set-cookie", cookie);
 	}
+	// Seed the editor UI language (readable by the client LocaleProvider — not
+	// HttpOnly). The user can still switch it via the header toggle.
+	response.cookies.set("oc_locale", lang, {
+		path: "/",
+		maxAge: 60 * 60 * 24 * 365,
+		sameSite: "lax",
+	});
 	return response;
 }
