@@ -14,6 +14,13 @@ export interface StorageAdapter<T> {
 	clear(): Promise<void>;
 }
 
+// Adapter used for the projects store. Extends StorageAdapter with getAll(),
+// which the service relies on for metadata listing. Both IndexedDBAdapter and
+// BackendStorageAdapter satisfy this, so the projects backend is swappable.
+export interface ProjectStorageAdapter<T> extends StorageAdapter<T> {
+	getAll(): Promise<T[]>;
+}
+
 export interface MediaAssetData {
 	id: string;
 	name: string;
@@ -27,6 +34,9 @@ export interface MediaAssetData {
 	hasAudio?: boolean;
 	ephemeral?: boolean;
 	thumbnailUrl?: string;
+	// Backend storage mode only: presigned/backend URL of the binary in MinIO.
+	// Absent in local (IndexedDB/OPFS) mode, where the binary lives in OPFS.
+	url?: string;
 }
 
 export type SerializedScene = Omit<TScene, "createdAt" | "updatedAt"> & {

@@ -2,6 +2,7 @@ import {
 	IndexedDBAdapter,
 	deleteDatabase,
 } from "@/services/storage/indexeddb-adapter";
+import { isBackendStorage } from "@/services/storage/backend-config";
 import type { StorageMigration } from "./base";
 import type { ProjectRecord } from "./transformers/types";
 import { getProjectId, isRecord } from "./transformers/utils";
@@ -28,6 +29,13 @@ export async function runStorageMigrations({
 	migrations: StorageMigration[];
 	onProgress?: (progress: MigrationProgress) => void;
 }): Promise<StorageMigrationResult> {
+	// Backend mode: projects come from the server already at the current version,
+	// and the local IndexedDB migration path (which reads video-editor-projects)
+	// does not apply. Skip it entirely.
+	if (isBackendStorage()) {
+		return { migratedCount: 0 };
+	}
+
 	// One-time cleanup: delete the old global version database
 	if (!hasCleanedUpMetaDb) {
 		try {

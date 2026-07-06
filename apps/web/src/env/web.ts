@@ -43,6 +43,10 @@ const webEnvSchema = z.object({
 		.string()
 		.optional()
 		.default("https://pmzclips.pandoramodz.com.br"),
+	// Storage mode (build-time, client-inlined). "backend" persists projects +
+	// media to the pmz-clipper backend; anything else (default) = local
+	// IndexedDB/OPFS. See services/storage/backend-config.ts.
+	NEXT_PUBLIC_STORAGE_BACKEND: z.string().optional(),
 });
 
 export type WebEnv = z.infer<typeof webEnvSchema>;

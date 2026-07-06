@@ -78,6 +78,7 @@ services:
       target: builder
       args:
         - NEXT_PUBLIC_SITE_URL=https://editor.${DOMAIN}
+        - NEXT_PUBLIC_STORAGE_BACKEND=${OC_STORAGE_BACKEND:-}
         - NEXT_PUBLIC_MARBLE_API_URL=https://api.marblecms.com
         - MARBLE_WORKSPACE_KEY=build-placeholder
         - FREESOUND_CLIENT_ID=build-placeholder
@@ -102,6 +103,10 @@ services:
         # NEXT_PUBLIC_* are inlined into the client bundle at BUILD time,
         # so they must be passed as build args (not just runtime env).
         - NEXT_PUBLIC_SITE_URL=https://editor.${DOMAIN}
+        # "" = local storage (default). Set OC_STORAGE_BACKEND=backend in Coolify
+        # to persist projects + media to the clipper backend. Must match the
+        # oc-migrate arg above so the builder cache is shared.
+        - NEXT_PUBLIC_STORAGE_BACKEND=${OC_STORAGE_BACKEND:-}
         - NEXT_PUBLIC_MARBLE_API_URL=https://api.marblecms.com
         - MARBLE_WORKSPACE_KEY=build-placeholder
         - FREESOUND_CLIENT_ID=build-placeholder

@@ -12,6 +12,9 @@ ARG MARBLE_WORKSPACE_KEY=build-placeholder
 # (used by better-auth's client baseURL), so it MUST be provided as a
 # build arg for self-hosted deploys. Defaults to localhost for upstream/dev.
 ARG NEXT_PUBLIC_SITE_URL=http://localhost:3000
+# Storage mode (inlined at build). Empty = local IndexedDB/OPFS (default);
+# "backend" persists projects + media via /api/editor-storage.
+ARG NEXT_PUBLIC_STORAGE_BACKEND=
 
 COPY package.json package.json
 COPY bun.lock bun.lock
@@ -31,6 +34,7 @@ ENV BETTER_AUTH_SECRET="build-time-secret"
 ENV UPSTASH_REDIS_REST_URL="http://localhost:8079"
 ENV UPSTASH_REDIS_REST_TOKEN="example_token"
 ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
+ENV NEXT_PUBLIC_STORAGE_BACKEND=$NEXT_PUBLIC_STORAGE_BACKEND
 ENV NEXT_PUBLIC_MARBLE_API_URL=$NEXT_PUBLIC_MARBLE_API_URL
 ENV MARBLE_WORKSPACE_KEY=$MARBLE_WORKSPACE_KEY
 

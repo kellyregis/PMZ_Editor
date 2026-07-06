@@ -140,6 +140,38 @@ Requisitos no lado do app / infra (o orquestrador implementa):
   `GET` cross-origin a partir de `https://editor.<DOMAIN>` (o browser baixa direto).
 - `PMZ_SSO_SECRET` idêntico nos dois lados.
 
+## Storage backend (Fase 1 — flag)
+
+Por padrão o editor persiste projetos/mídia **localmente** (IndexedDB + OPFS) —
+comportamento intacto. Com a flag **`NEXT_PUBLIC_STORAGE_BACKEND=backend`**, os
+projetos e binários de mídia passam a ser persistidos no backend do pmz-clipper.
+
+- **Flag (build-time):** `NEXT_PUBLIC_*` é inlinada no bundle no `next build`, então
+  precisa ser passada como **build-arg**. No Coolify, setar `OC_STORAGE_BACKEND=backend`
+  (o compose repassa como build-arg pra `oc-web` e `oc-migrate`). Vazio/ausente = local.
+  Trocar o modo exige **rebuild**.
+- **Projeto:** `BackendStorageAdapter` (`services/storage/backend-adapter.ts`) fala com
+  os proxy routes same-origin `/api/editor-storage/projects*`; o proxy
+  (`app/api/editor-storage/[...path]/route.ts`, Node) valida a sessão better-auth e
+  encaminha pro `${PMZ_CLIPPER_API}/editor/*` com `Authorization: Bearer ${PMZ_SSO_SECRET}`
+  + `X-PMZ-User`. Segredo nunca vai ao browser.
+- **Mídia:** ao salvar, o `File` é enviado (`POST /api/editor-storage/media`, multipart)
+  → MinIO; a `url` retornada é guardada no metadata; ao carregar, `fetch(url)` → `File`.
+  Os binários **não** vão pro OPFS no modo backend.
+- **Migrations locais:** o runner (`services/storage/migrations/runner.ts`) é **pulado**
+  no modo backend (os projetos vêm do servidor já na versão 31).
+- Requer `PMZ_SSO_SECRET` setado (o proxy retorna 501 sem ele).
+
+Requisitos do lado do app (backend, server-to-server, auth = `Bearer PMZ_SSO_SECRET`
++ `X-PMZ-User`): `GET/PUT/DELETE /editor/projects/{id}` e `GET /editor/projects`
+(projeto = `{id,name,data_json,updated_at}`), `POST /editor/media` (multipart →
+`{id,url}`), `GET /editor/media/{id}` → `{url}`. Presigned URLs de mídia precisam de
+CORS `GET` a partir de `https://editor.<DOMAIN>`.
+
+Limitação desta fase: o **metadata** de mídia ainda fica local (IndexedDB) — só o
+binário é server-persistido. Edição cross-device de um projeto com mídia exige, no
+futuro, persistir o metadata no servidor (ex.: embutido no `data_json`).
+
 ## Passos no Coolify
 
 1. Novo recurso → **Docker Compose**, apontando para o repo

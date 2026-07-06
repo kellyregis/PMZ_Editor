@@ -3,6 +3,12 @@ import { getProjectDurationFromScenes } from "@/timeline/scenes";
 import type { MediaAsset } from "@/media/types";
 import { IndexedDBAdapter } from "./indexeddb-adapter";
 import { OPFSAdapter } from "./opfs-adapter";
+import { isBackendStorage } from "./backend-config";
+import {
+	BackendStorageAdapter,
+	fetchBackendMediaFile,
+	uploadBackendMedia,
+} from "./backend-adapter";
 import {
 	type StorageCapacityCheckResult,
 	StorageQuotaExceededError,
@@ -12,6 +18,7 @@ import {
 } from "./quota";
 import type {
 	MediaAssetData,
+	ProjectStorageAdapter,
 	StorageConfig,
 	SerializedProject,
 	SerializedScene,
@@ -52,7 +59,7 @@ function normalizeBookmarks({ raw }: { raw: unknown }): Bookmark[] {
 }
 
 class StorageService {
-	private projectsAdapter: IndexedDBAdapter<SerializedProject>;
+	private projectsAdapter: ProjectStorageAdapter<SerializedProject>;
 	private savedSoundsAdapter: IndexedDBAdapter<SavedSoundsData>;
 	private config: StorageConfig;
 	private migrationsPromise: Promise<void> | null = null;
@@ -65,11 +72,15 @@ class StorageService {
 			version: 1,
 		};
 
-		this.projectsAdapter = new IndexedDBAdapter<SerializedProject>({
-			dbName: this.config.projectsDb,
-			storeName: "projects",
-			version: this.config.version,
-		});
+		// Flag-gated: projects persist to the pmz-clipper backend when
+		// NEXT_PUBLIC_STORAGE_BACKEND === "backend", otherwise local IndexedDB.
+		this.projectsAdapter = isBackendStorage()
+			? new BackendStorageAdapter<SerializedProject>()
+			: new IndexedDBAdapter<SerializedProject>({
+					dbName: this.config.projectsDb,
+					storeName: "projects",
+					version: this.config.version,
+				});
 
 		this.savedSoundsAdapter = new IndexedDBAdapter<SavedSoundsData>({
 			dbName: this.config.savedSoundsDb,
@@ -307,6 +318,15 @@ class StorageService {
 			ephemeral: mediaAsset.ephemeral,
 		};
 
+		// Backend mode: the binary goes to MinIO over HTTP (never OPFS). We store
+		// the returned URL in the (local) metadata so it can be re-fetched.
+		if (isBackendStorage()) {
+			const { url } = await uploadBackendMedia({ file: mediaAsset.file });
+			metadata.url = url;
+			await mediaMetadataAdapter.set({ key: mediaAsset.id, value: metadata });
+			return;
+		}
+
 		try {
 			await mediaAssetsAdapter.set({
 				key: mediaAsset.id,
@@ -343,12 +363,27 @@ class StorageService {
 		const { mediaMetadataAdapter, mediaAssetsAdapter } =
 			this.getProjectMediaAdapters({ projectId });
 
-		const [file, metadata] = await Promise.all([
-			mediaAssetsAdapter.get(id),
-			mediaMetadataAdapter.get(id),
-		]);
+		const metadata = await mediaMetadataAdapter.get(id);
+		if (!metadata) return null;
 
-		if (!file || !metadata) return null;
+		// Backend mode: metadata carries the MinIO URL — fetch the binary over
+		// HTTP. Otherwise read the binary from OPFS (local mode).
+		let file: File | null;
+		if (metadata.url) {
+			try {
+				file = await fetchBackendMediaFile({
+					url: metadata.url,
+					name: metadata.name,
+				});
+			} catch (error) {
+				console.error("Failed to fetch backend media asset:", error);
+				return null;
+			}
+		} else {
+			file = await mediaAssetsAdapter.get(id);
+		}
+
+		if (!file) return null;
 
 		let url: string;
 		if (metadata.type === "image" && (!file.type || file.type === "")) {
