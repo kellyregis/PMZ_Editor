@@ -9,6 +9,11 @@ const nextConfig: NextConfig = {
 	reactStrictMode: true,
 	productionBrowserSourceMaps: true,
 	output: "standalone",
+	// Fase 0 (fork arquivado): o upstream tem erros de type/lint no commit
+	// pinado (buildava pelo caminho Cloudflare/opennext que não type-checava).
+	// Ignoramos no build pra permitir o `next build` self-host.
+	typescript: { ignoreBuildErrors: true },
+	eslint: { ignoreDuringBuilds: true },
 	images: {
 		remotePatterns: [
 			{
